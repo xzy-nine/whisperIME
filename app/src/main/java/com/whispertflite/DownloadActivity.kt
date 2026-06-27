@@ -10,11 +10,11 @@ import com.whispertflite.utils.Downloader
 import com.whispertflite.utils.ThemeUtils
 
 class DownloadActivity  : AppCompatActivity() {
-    private var binding: ActivityDownloadBinding? = null
+    private lateinit var binding: ActivityDownloadBinding
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityDownloadBinding.inflate(layoutInflater)
-        setContentView(binding!!.root)
+        setContentView(binding.root)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         ThemeUtils.setStatusBarAppearance(this)
     }
@@ -23,23 +23,23 @@ class DownloadActivity  : AppCompatActivity() {
         super.onResume()
         if (Downloader.checkModels(this)){
             // call Main Activity
-            binding?.downloadProgress?.setProgress(100)
-            binding?.downloadProgress?.setVisibility(View.VISIBLE)
-            binding?.buttonStart?.setVisibility(View.VISIBLE)
+            binding.downloadProgress?.setProgress(100)
+            binding.downloadProgress?.setVisibility(View.VISIBLE)
+            binding.buttonStart?.setVisibility(View.VISIBLE)
             if (!Downloader.checkUpdate(this)){
                 val intent = Intent(this, MainActivity::class.java)
                 startActivity(intent)
                 finish()
             } else {
-                binding?.buttonUpdate?.setVisibility(View.VISIBLE)
+                binding.buttonUpdate?.setVisibility(View.VISIBLE)
             }
         }
     }
 
     fun download(view: View) {
-        binding?.downloadSize?.setVisibility(View.VISIBLE)
-        binding?.downloadProgress?.setVisibility(View.VISIBLE)
-        binding?.buttonStart?.setVisibility(View.INVISIBLE)
+        binding.downloadSize?.setVisibility(View.VISIBLE)
+        binding.downloadProgress?.setVisibility(View.VISIBLE)
+        binding.buttonStart?.setVisibility(View.INVISIBLE)
         Downloader.downloadModels(this, binding)
     }
 
@@ -50,10 +50,10 @@ class DownloadActivity  : AppCompatActivity() {
     }
 
     fun updateModels(view: View) {
-        binding?.downloadSize?.setVisibility(View.VISIBLE)
-        binding?.downloadProgress?.setVisibility(View.VISIBLE)
-        binding?.buttonStart?.setVisibility(View.INVISIBLE)
-        binding?.buttonUpdate?.setVisibility(View.GONE)
+        binding.downloadSize?.setVisibility(View.VISIBLE)
+        binding.downloadProgress?.setVisibility(View.VISIBLE)
+        binding.buttonStart?.setVisibility(View.INVISIBLE)
+        binding.buttonUpdate?.setVisibility(View.GONE)
         Downloader.deleteOldModels(this);
         Downloader.downloadModels(this, binding)
     }
