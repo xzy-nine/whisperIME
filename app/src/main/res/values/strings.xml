@@ -43,4 +43,7 @@
     <string name="error_no_input">No voice input received</string>
     <string name="auto_lang">Detect language</string>
     <string name="mute_during_recording">Mute during recording:</string>
+    <string name="swipe_cut_paste">Swipe up cut / swipe down paste:</string>
+    <string name="gesture_hint_left">← → cursor  ↑ copy  ↓ paste</string>
+    <string name="gesture_hint_right">two‑finger: ← → select  ↑ cut  ⇈ select all</string>
 </resources>

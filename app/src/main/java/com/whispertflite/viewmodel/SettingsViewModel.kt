@@ -22,6 +22,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val languagePairs = MutableStateFlow<List<Pair<String, String>>>(emptyList())
     val selectedLanguageIndex = MutableStateFlow(0)
     val simpleChinese = MutableStateFlow(false)
+    val swipeCutPasteEnabled = MutableStateFlow(true)
 
     fun loadModelFiles() {
         val files = sdcardDataFolder?.let {
@@ -47,6 +48,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             ?: "whisper-small.TOP_WORLD.tflite"
         val savedLang = sp.getString("recognitionServiceLanguage", "auto") ?: "auto"
         simpleChinese.value = sp.getBoolean("RecognitionServiceSimpleChinese", false)
+        swipeCutPasteEnabled.value = sp.getBoolean("swipeCutPasteEnabled", true)
 
         selectedModel.value = modelFiles.value.find { it.name == savedModelName }
         val modelIdx = modelFiles.value.indexOfFirst { it.name == savedModelName }
@@ -84,6 +86,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun toggleSimpleChinese(checked: Boolean) {
         simpleChinese.value = checked
         sp.edit().putBoolean("RecognitionServiceSimpleChinese", checked).apply()
+    }
+
+    fun toggleSwipeCutPaste(checked: Boolean) {
+        swipeCutPasteEnabled.value = checked
+        sp.edit().putBoolean("swipeCutPasteEnabled", checked).apply()
     }
 
     override fun onCleared() {

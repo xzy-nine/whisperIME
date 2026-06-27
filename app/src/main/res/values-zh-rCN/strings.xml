@@ -42,4 +42,7 @@
     <string name="error_no_input">未接受到语音输入</string>
     <string name="auto_lang">检测语言</string>
     <string name="mute_during_recording">录音时静音:</string>
+    <string name="swipe_cut_paste">上滑剪切 / 下滑粘贴:</string>
+    <string name="gesture_hint_left">← → 光标  ↑ 复制  ↓ 粘贴</string>
+    <string name="gesture_hint_right">双指← → 选择  ↑ 剪切  ⇈ 全选</string>
 </resources>

@@ -37,6 +37,8 @@ import com.whispertflite.utils.InputLang
 import com.whispertflite.utils.InputLang.Companion.langList
 import com.whispertflite.utils.ModelConstants
 import java.io.File
+import kotlin.math.max
+import kotlin.math.min
 
 class WhisperInputMethodService : InputMethodService() {
     private var btnRecord: ImageButton? = null
@@ -56,6 +58,7 @@ class WhisperInputMethodService : InputMethodService() {
     private var modeAuto = false
     private var translate = false
     private var layoutButtons: LinearLayout? = null
+    private var gestureHint: View? = null
     private var micShapeDrawable: GradientDrawable? = null
     private var mSavedMediaVolume = -1
 
@@ -110,7 +113,7 @@ class WhisperInputMethodService : InputMethodService() {
         sdcardDataFolder = getExternalFilesDir(null)
         modeAuto = sp.getBoolean("imeModeAuto", false)
 
-        val root = LinearLayout(this).apply {
+        val root = TouchKeyboardLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -183,6 +186,7 @@ class WhisperInputMethodService : InputMethodService() {
             modeAuto = !modeAuto
             sp.edit().putBoolean("imeModeAuto", modeAuto).apply()
             layoutButtons?.visibility = if (modeAuto) View.GONE else View.VISIBLE
+            gestureHint?.visibility = if (modeAuto) View.GONE else View.VISIBLE
             btnModeAuto?.setImageResource(
                 if (modeAuto) R.drawable.ic_auto_on_36dp else R.drawable.ic_auto_off_36dp
             )
@@ -240,6 +244,40 @@ class WhisperInputMethodService : InputMethodService() {
             addView(buildRow(density, btnModeAuto!!, btnTranslate!!, btnEnter!!))
         }
         root.addView(layoutButtons)
+
+        val hintRow = LinearLayout(this).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            )
+            orientation = LinearLayout.HORIZONTAL
+            val ctx = this@WhisperInputMethodService
+            val hintColor = (if (ctx.isNightMode()) 0xFFE6E1E5.toInt() else 0xFF1D1B20.toInt()) and
+                    0x00FFFFFF or (0x88 shl 24)
+
+            addView(TextView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    leftMargin = ctx.dp(density, 16)
+                }
+                gravity = Gravity.START
+                textSize = 10f
+                setTextColor(hintColor)
+                text = ctx.getString(R.string.gesture_hint_left)
+                maxLines = 2
+            })
+            addView(TextView(ctx).apply {
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    rightMargin = ctx.dp(density, 16)
+                }
+                gravity = Gravity.END
+                textSize = 10f
+                setTextColor(hintColor)
+                text = ctx.getString(R.string.gesture_hint_right)
+                maxLines = 2
+            })
+        }
+        root.addView(hintRow)
+        gestureHint = hintRow
 
         if (modeAuto) {
             vibrate(this)
@@ -547,6 +585,246 @@ class WhisperInputMethodService : InputMethodService() {
         if (mWhisper != null) {
             mWhisper!!.unloadModel()
             mWhisper = null
+        }
+    }
+
+    private class FingerState(
+        var lastX: Float, var accumulatedX: Float,
+        var lastY: Float, var accumulatedY: Float,
+        var isLeft: Boolean
+    )
+
+    private inner class TouchKeyboardLayout(context: android.content.Context) : LinearLayout(context) {
+        private val thresholdPx = 30f * resources.displayMetrics.density
+        private val yThresholdPx = 45f * resources.displayMetrics.density
+        private val swipeCutPasteEnabled = PreferenceManager.getDefaultSharedPreferences(context)
+            .getBoolean("swipeCutPasteEnabled", true)
+        private val activePointers = mutableMapOf<Int, FingerState>()
+        private var selectionMode = false
+        // 选中模式状态：反向缩减
+        private var extendDir: Int? = null  // null=未设置, -1=向左扩展, 1=向右扩展
+        private var isReducing = false
+        // 粘贴后可撤回
+        private var pastePerformed = false
+        // 单次触摸仅触发一次 Y 轴动作
+        private var yActioned = false
+        // 双指长按全选
+        private var selectionLongPressRunnable: Runnable? = null
+
+        private fun resetSelectionState() {
+            extendDir = null
+            isReducing = false
+        }
+
+        private fun isLeftZone(x: Float, w: Int): Boolean? {
+            val leftBound = w * 0.375f
+            val rightBound = w * (1f - 0.375f)
+            return when {
+                x < leftBound -> true
+                x > rightBound -> false
+                else -> null
+            }
+        }
+
+        private fun checkSelectionMode() {
+            val hasLeft = activePointers.values.any { it.isLeft }
+            val hasRight = activePointers.values.any { !it.isLeft }
+            val wasSelectionMode = selectionMode
+            selectionMode = hasLeft && hasRight
+            // 双指按下时启动长按全选计时器
+            if (selectionMode && !wasSelectionMode) {
+                selectionLongPressRunnable?.let { handler.removeCallbacks(it) }
+                selectionLongPressRunnable = Runnable {
+                    val ic = currentInputConnection
+                    if (ic != null && selectionMode) {
+                        ic.performContextMenuAction(android.R.id.selectAll)
+                        yActioned = true
+                    }
+                }
+                handler.postDelayed(selectionLongPressRunnable!!, 400)
+            } else if (!selectionMode) {
+                selectionLongPressRunnable?.let { handler.removeCallbacks(it) }
+                selectionLongPressRunnable = null
+            }
+        }
+
+        private fun getSelectionRange(): Pair<Int, Int>? {
+            val ic = currentInputConnection ?: return null
+            val request = android.view.inputmethod.ExtractedTextRequest()
+            request.token = 0
+            val extracted = ic.getExtractedText(request, 0) ?: return null
+            return Pair(extracted.selectionStart, extracted.selectionEnd)
+        }
+
+        private fun sendCursorKey(keyCode: Int) {
+            val ic = currentInputConnection ?: return
+            val (selStart, selEnd) = getSelectionRange() ?: return
+
+            if (selectionMode) {
+                val dir = if (keyCode == KeyEvent.KEYCODE_DPAD_LEFT) -1 else 1
+
+                if (extendDir == null) {
+                    // 首次滑动：确定扩展方向
+                    extendDir = dir
+                    isReducing = false
+                }
+
+                if (dir == extendDir) {
+                    // 同方向 → 扩展
+                    isReducing = false
+                    if (dir == -1) {
+                        ic.setSelection(max(0, selStart - 1), selEnd)
+                    } else {
+                        ic.setSelection(selStart, selEnd + 1)
+                    }
+                } else {
+                    // 反方向 → 缩减（从扩展的那一侧缩减）
+                    isReducing = true
+                    if (extendDir == -1) {
+                        // 之前向左扩展（selStart--），现在缩减 → selStart++
+                        ic.setSelection(min(selEnd, selStart + 1), selEnd)
+                    } else {
+                        // 之前向右扩展（selEnd++），现在缩减 → selEnd--
+                        ic.setSelection(selStart, max(selStart, selEnd - 1))
+                    }
+                }
+            } else {
+                // 光标移动模式（参照 fcitx5 handleArrowKey）
+                when (keyCode) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        // 有选区时跳到选区起点，无选区时左移一位
+                        val target = if (selStart != selEnd) selStart else max(0, selStart - 1)
+                        ic.setSelection(target, target)
+                    }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        // 有选区时跳到选区终点，无选区时右移一位
+                        val target = if (selStart != selEnd) selEnd else selEnd + 1
+                        ic.setSelection(target, target)
+                    }
+                }
+            }
+        }
+
+        override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
+                    val idx = event.actionIndex
+                    val pid = event.getPointerId(idx)
+                    val x = event.getX(idx)
+                    val y = event.getY(idx)
+                    val isLeft = isLeftZone(x, width)
+                    if (isLeft != null) {
+                        activePointers[pid] = FingerState(
+                            lastX = x, accumulatedX = 0f,
+                            lastY = y, accumulatedY = 0f,
+                            isLeft = isLeft
+                        )
+                        checkSelectionMode()
+                    }
+                }
+
+                MotionEvent.ACTION_MOVE -> {
+                    if (activePointers.isNotEmpty()) {
+                        var yUpCount = 0
+                        var yDownCount = 0
+
+                        for (i in 0 until event.pointerCount) {
+                            val pid = event.getPointerId(i)
+                            val info = activePointers[pid] ?: continue
+                            val newX = event.getX(i)
+                            val newY = event.getY(i)
+                            val dx = newX - info.lastX
+                            val dy = newY - info.lastY
+                            info.lastX = newX
+                            info.lastY = newY
+                            info.accumulatedX += dx
+                            info.accumulatedY += dy
+
+                            // X 轴优先（光标移动/选择）
+                            var xFired = false
+                            while (kotlin.math.abs(info.accumulatedX) >= thresholdPx) {
+                                val keyCode = if (info.accumulatedX > 0)
+                                    KeyEvent.KEYCODE_DPAD_RIGHT
+                                else
+                                    KeyEvent.KEYCODE_DPAD_LEFT
+                                sendCursorKey(keyCode)
+                                info.accumulatedX -= if (info.accumulatedX > 0) thresholdPx else -thresholdPx
+                                xFired = true
+                                // 手指移动时取消长按全选
+                                selectionLongPressRunnable?.let { handler.removeCallbacks(it) }
+                                selectionLongPressRunnable = null
+                            }
+
+                            // X 触发后抑制 Y
+                            if (xFired && swipeCutPasteEnabled) {
+                                info.accumulatedY = 0f
+                            }
+
+                            // Y 轴
+                            if (swipeCutPasteEnabled && !xFired &&
+                                kotlin.math.abs(info.accumulatedY) >= yThresholdPx) {
+                                if (info.accumulatedY < 0) {
+                                    yUpCount++
+                                } else {
+                                    yDownCount++
+                                }
+                                info.accumulatedY = 0f
+                            }
+                        }
+
+                        // 循环后：单次触摸仅触发一次 Y 动作
+                        if (swipeCutPasteEnabled && !yActioned) {
+                            if (yUpCount > 0 && pastePerformed) {
+                                currentInputConnection?.performContextMenuAction(android.R.id.undo)
+                                pastePerformed = false
+                                yActioned = true
+                            } else if (yDownCount > 0 && !selectionMode) {
+                                currentInputConnection?.performContextMenuAction(android.R.id.paste)
+                                pastePerformed = true
+                                yActioned = true
+                            } else if (selectionMode && yUpCount >= 1) {
+                                val (selStart, selEnd) = getSelectionRange() ?: Pair(0, 0)
+                                if (selStart != selEnd) {
+                                    currentInputConnection?.performContextMenuAction(android.R.id.cut)
+                                    yActioned = true
+                                }
+                            } else if (!selectionMode && yUpCount > 0) {
+                                val (selStart, selEnd) = getSelectionRange() ?: Pair(0, 0)
+                                if (selStart != selEnd) {
+                                    currentInputConnection?.performContextMenuAction(android.R.id.copy)
+                                    yActioned = true
+                                }
+                            }
+                        }
+                    }
+                }
+
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    val idx = event.actionIndex
+                    val pid = event.getPointerId(idx)
+                    activePointers.remove(pid)
+                    if (activePointers.isEmpty()) {
+                        selectionLongPressRunnable?.let { handler.removeCallbacks(it) }
+                        selectionLongPressRunnable = null
+                        selectionMode = false
+                        pastePerformed = false
+                        yActioned = false
+                        resetSelectionState()
+                    } else checkSelectionMode()
+                }
+
+                MotionEvent.ACTION_CANCEL -> {
+                    selectionLongPressRunnable?.let { handler.removeCallbacks(it) }
+                    selectionLongPressRunnable = null
+                    activePointers.clear()
+                    selectionMode = false
+                    pastePerformed = false
+                    yActioned = false
+                    resetSelectionState()
+                }
+            }
+
+            return activePointers.isNotEmpty() || selectionMode || super.dispatchTouchEvent(event)
         }
     }
 

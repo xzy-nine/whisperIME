@@ -20,6 +20,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     val languagePairs by viewModel.languagePairs.collectAsState()
     val selectedLangIndex by viewModel.selectedLanguageIndex.collectAsState()
     val simpleChinese by viewModel.simpleChinese.collectAsState()
+    val swipeCutPasteEnabled by viewModel.swipeCutPasteEnabled.collectAsState()
 
     var modelExpanded by remember { mutableStateOf(false) }
     var langExpanded by remember { mutableStateOf(false) }
@@ -116,6 +117,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         onCheckedChange = { viewModel.toggleSimpleChinese(it) }
                     )
                     Text(context.getString(R.string.simple_chinese))
+                }
+
+                Spacer(Modifier.height(8.dp))
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(
+                        checked = swipeCutPasteEnabled,
+                        onCheckedChange = { viewModel.toggleSwipeCutPaste(it) }
+                    )
+                    Text(context.getString(R.string.swipe_cut_paste))
                 }
             }
         }
