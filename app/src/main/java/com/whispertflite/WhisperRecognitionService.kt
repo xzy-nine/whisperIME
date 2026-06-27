@@ -25,6 +25,7 @@ import com.whispertflite.asr.WhisperResult
 import com.whispertflite.utils.HapticFeedback.vibrate
 import com.whispertflite.utils.InputLang
 import com.whispertflite.utils.InputLang.Companion.langList
+import com.whispertflite.utils.ModelConstants
 import java.io.File
 import java.util.Locale
 
@@ -61,7 +62,7 @@ class WhisperRecognitionService : RecognitionService() {
             sdcardDataFolder,
             sp!!.getString(
                 "recognitionServiceModelName",
-                MainActivity.Companion.MULTI_LINGUAL_TOP_WORLD_SLOW
+                ModelConstants.MULTI_LINGUAL_TOP_WORLD_SLOW
             )
         )
 
@@ -138,9 +139,9 @@ class WhisperRecognitionService : RecognitionService() {
     // Model initialization
     private fun initModel(modelFile: File, callback: Callback, langToken: Int) {
         val isMultilingualModel: Boolean =
-            !(modelFile.getName().endsWith(MainActivity.Companion.ENGLISH_ONLY_MODEL_EXTENSION))
+            !(modelFile.getName().endsWith(ModelConstants.ENGLISH_ONLY_MODEL_EXTENSION))
         val vocabFileName: String =
-            if (isMultilingualModel) MainActivity.Companion.MULTILINGUAL_VOCAB_FILE else MainActivity.Companion.ENGLISH_ONLY_VOCAB_FILE
+            if (isMultilingualModel) ModelConstants.MULTILINGUAL_VOCAB_FILE else ModelConstants.ENGLISH_ONLY_VOCAB_FILE
         val vocabFile = File(sdcardDataFolder, vocabFileName)
 
         mWhisper = Whisper(this)

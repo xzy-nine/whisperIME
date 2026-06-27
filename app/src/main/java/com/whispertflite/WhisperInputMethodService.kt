@@ -1,11 +1,6 @@
 package com.whispertflite
 
-import android.Manifest
-import android.annotation.SuppressLint
-import android.content.Context
 import android.content.Intent
-import android.content.SharedPreferences
-import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
 import android.media.AudioManager
 import android.os.CountDownTimer
@@ -15,24 +10,20 @@ import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
-import android.view.View.OnTouchListener
 import android.view.inputmethod.EditorInfo
 import android.widget.ImageButton
 import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.TextView
-import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
-import com.github.houbb.opencc4j.util.ZhConverterUtil
 import com.whispertflite.asr.Recorder
-import com.whispertflite.asr.Recorder.RecorderListener
 import com.whispertflite.asr.Whisper
-import com.whispertflite.asr.Whisper.WhisperListener
 import com.whispertflite.asr.WhisperResult
 import com.whispertflite.utils.HapticFeedback
 import com.whispertflite.utils.HapticFeedback.vibrate
 import com.whispertflite.utils.InputLang
 import com.whispertflite.utils.InputLang.Companion.langList
+import com.whispertflite.utils.ModelConstants
 import java.io.File
 
 class WhisperInputMethodService : InputMethodService() {
@@ -48,18 +39,12 @@ class WhisperInputMethodService : InputMethodService() {
     private var sdcardDataFolder: File? = null
     private var selectedTfliteFile: File? = null
     private var processingBar: ProgressBar? = null
-    private var sp: SharedPreferences? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var mContext: Context? = null
     private var countDownTimer: CountDownTimer? = null
     private var modeAuto = false
+    private var translate = false
     private var layoutButtons: LinearLayout? = null
     private var mSavedMediaVolume = -1
-
-    override fun onCreate() {
-        mContext = this
-        super.onCreate()
-    }
 
     override fun onDestroy() {
         deinitModel()
@@ -72,10 +57,7 @@ class WhisperInputMethodService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         if (attribute.inputType == EditorInfo.TYPE_NULL) {
-            Log.d(
-                TAG,
-                "Cancelling: onStartInput: inputType=" + attribute.inputType + ", package=" + attribute.packageName + ", fieldId=" + attribute.fieldId
-            )
+            Log.d(TAG, "Cancelling: onStartInput: inputType=${attribute.inputType}, package=${attribute.packageName}")
             unmuteMediaAudio()
             deinitModel()
             if (mRecorder != null && mRecorder!!.isInProgress) {
@@ -85,20 +67,22 @@ class WhisperInputMethodService : InputMethodService() {
     }
 
     override fun onStartInputView(attribute: EditorInfo?, restarting: Boolean) {
+        val sp = PreferenceManager.getDefaultSharedPreferences(this)
         selectedTfliteFile = File(
             sdcardDataFolder,
-            sp!!.getString("modelName", MainActivity.Companion.MULTI_LINGUAL_TOP_WORLD_SLOW)
+            sp.getString("modelName", ModelConstants.MULTI_LINGUAL_TOP_WORLD_SLOW)
         )
 
         if (!selectedTfliteFile!!.exists()) {
-            switchToPreviousInputMethod() //switch back and download models first
-            val intent = Intent(this, DownloadActivity::class.java)
-            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            switchToPreviousInputMethod()
+            val intent = Intent(this, DownloadActivity::class.java).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
             startActivity(intent)
         } else {
             if (mWhisper == null) initModel(selectedTfliteFile!!)
             else {
-                if (mWhisper!!.currentModelPath != selectedTfliteFile!!.getAbsolutePath()) {
+                if (mWhisper!!.currentModelPath != selectedTfliteFile!!.absolutePath) {
                     deinitModel()
                     initModel(selectedTfliteFile!!)
                 }
@@ -106,117 +90,85 @@ class WhisperInputMethodService : InputMethodService() {
         }
     }
 
+    override fun onCreateInputView(): View {
+        val sp = PreferenceManager.getDefaultSharedPreferences(this)
+        val view = layoutInflater.inflate(R.layout.voice_service, null)
+        btnRecord = view.findViewById(R.id.btnRecord)
+        btnKeyboard = view.findViewById(R.id.btnKeyboard)
+        btnTranslate = view.findViewById(R.id.btnTranslate)
+        btnModeAuto = view.findViewById(R.id.btnModeAuto)
+        btnEnter = view.findViewById(R.id.btnEnter)
+        btnDel = view.findViewById(R.id.btnDel)
+        processingBar = view.findViewById(R.id.processing_bar)
+        tvStatus = view.findViewById(R.id.tv_status)
+        sdcardDataFolder = getExternalFilesDir(null)
 
-    @SuppressLint("ClickableViewAccessibility")
-    override fun onCreateInputView(): View {  //runs before onStartInputView
-        sp = PreferenceManager.getDefaultSharedPreferences(this)
-        val view = getLayoutInflater().inflate(R.layout.voice_service, null)
-        btnRecord = view.findViewById<ImageButton>(R.id.btnRecord)
-        btnKeyboard = view.findViewById<ImageButton>(R.id.btnKeyboard)
-        btnTranslate = view.findViewById<ImageButton>(R.id.btnTranslate)
-        btnModeAuto = view.findViewById<ImageButton>(R.id.btnModeAuto)
-        btnEnter = view.findViewById<ImageButton>(R.id.btnEnter)
-        btnDel = view.findViewById<ImageButton>(R.id.btnDel)
-        processingBar = view.findViewById<ProgressBar?>(R.id.processing_bar)
-        tvStatus = view.findViewById<TextView>(R.id.tv_status)
-        sdcardDataFolder = this.getExternalFilesDir(null)
         btnTranslate!!.setImageResource(if (translate) R.drawable.ic_english_on_36dp else R.drawable.ic_english_off_36dp)
-        modeAuto = sp!!.getBoolean("imeModeAuto", false)
+        modeAuto = sp.getBoolean("imeModeAuto", false)
         btnModeAuto!!.setImageResource(if (modeAuto) R.drawable.ic_auto_on_36dp else R.drawable.ic_auto_off_36dp)
-        layoutButtons = view.findViewById<LinearLayout>(R.id.layout_buttons)
-        checkRecordPermission()
+        layoutButtons = view.findViewById(R.id.layout_buttons)
 
-        // Audio recording functionality
         mRecorder = Recorder(this)
-        mRecorder!!.setListener(object : RecorderListener {
+        mRecorder!!.setListener(object : Recorder.RecorderListener {
             override fun onUpdateReceived(message: String?) {
                 if (message == Recorder.MSG_RECORDING) {
-                    handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background_pressed) })
+                    handler.post { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background_pressed) }
                 } else if (message == Recorder.MSG_RECORDING_DONE) {
                     unmuteMediaAudio()
-                    HapticFeedback.vibrate(mContext!!)
-                    handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) })
+                    HapticFeedback.vibrate(this@WhisperInputMethodService)
+                    handler.post { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) }
                     startTranscription()
                 } else if (message == Recorder.MSG_RECORDING_ERROR) {
                     unmuteMediaAudio()
-                    HapticFeedback.vibrate(mContext!!)
-                    if (countDownTimer != null) {
-                        countDownTimer!!.cancel()
-                    }
-                    handler.post(Runnable {
+                    HapticFeedback.vibrate(this@WhisperInputMethodService)
+                    if (countDownTimer != null) countDownTimer!!.cancel()
+                    handler.post {
                         btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background)
-                        tvStatus!!.setText(getString(R.string.error_no_input))
-                        tvStatus!!.setVisibility(View.VISIBLE)
-                        processingBar!!.setProgress(0)
-                    })
+                        tvStatus!!.text = getString(R.string.error_no_input)
+                        tvStatus!!.visibility = View.VISIBLE
+                        processingBar!!.progress = 0
+                    }
                 }
             }
         })
 
         if (modeAuto) {
-            layoutButtons!!.setVisibility(View.GONE)
+            layoutButtons!!.visibility = View.GONE
             vibrate(this)
             startRecording()
-            handler.post(Runnable { processingBar!!.setProgress(100) })
+            handler.post { processingBar!!.progress = 100 }
             countDownTimer = object : CountDownTimer(30000, 1000) {
                 override fun onTick(l: Long) {
-                    handler.post(Runnable { processingBar!!.setProgress((l / 300).toInt()) })
+                    handler.post { processingBar!!.progress = (l / 300).toInt() }
                 }
-
                 override fun onFinish() {}
             }
             countDownTimer!!.start()
-            handler.post(Runnable {
-                tvStatus!!.setText("")
-                tvStatus!!.setVisibility(View.GONE)
-            })
+            handler.post {
+                tvStatus!!.text = ""
+                tvStatus!!.visibility = View.GONE
+            }
         }
 
-        btnDel!!.setOnTouchListener(object : OnTouchListener {
+        btnDel!!.setOnTouchListener(object : View.OnTouchListener {
             private var initialDeleteRunnable: Runnable? = null
             private var repeatDeleteRunnable: Runnable? = null
 
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
-                if (event.getAction() == MotionEvent.ACTION_DOWN) {
-                    getCurrentInputConnection().sendKeyEvent(
-                        KeyEvent(
-                            KeyEvent.ACTION_DOWN,
-                            KeyEvent.KEYCODE_DEL
-                        )
-                    )
-                    // Post the initial delay of 500ms
-                    initialDeleteRunnable = object : Runnable {
-                        override fun run() {
-                            getCurrentInputConnection().sendKeyEvent(
-                                KeyEvent(
-                                    KeyEvent.ACTION_DOWN,
-                                    KeyEvent.KEYCODE_DEL
-                                )
-                            )
-                            // Start repeating every 100ms
-                            repeatDeleteRunnable = object : Runnable {
-                                override fun run() {
-                                    getCurrentInputConnection().sendKeyEvent(
-                                        KeyEvent(
-                                            KeyEvent.ACTION_DOWN,
-                                            KeyEvent.KEYCODE_DEL
-                                        )
-                                    )
-                                    handler.postDelayed(this, 100)
-                                }
-                            }
+                if (event.action == MotionEvent.ACTION_DOWN) {
+                    currentInputConnection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
+                    initialDeleteRunnable = Runnable {
+                        currentInputConnection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
+                        repeatDeleteRunnable = Runnable {
+                            currentInputConnection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))
                             handler.postDelayed(repeatDeleteRunnable!!, 100)
                         }
+                        handler.postDelayed(repeatDeleteRunnable!!, 100)
                     }
                     handler.postDelayed(initialDeleteRunnable!!, 500)
-                } else if (event.getAction() == MotionEvent.ACTION_UP) {
-                    // Remove both callbacks
-                    if (initialDeleteRunnable != null) {
-                        handler.removeCallbacks(initialDeleteRunnable!!)
-                    }
-                    if (repeatDeleteRunnable != null) {
-                        handler.removeCallbacks(repeatDeleteRunnable!!)
-                    }
+                } else if (event.action == MotionEvent.ACTION_UP) {
+                    if (initialDeleteRunnable != null) handler.removeCallbacks(initialDeleteRunnable!!)
+                    if (repeatDeleteRunnable != null) handler.removeCallbacks(repeatDeleteRunnable!!)
                     initialDeleteRunnable = null
                     repeatDeleteRunnable = null
                 }
@@ -224,75 +176,68 @@ class WhisperInputMethodService : InputMethodService() {
             }
         })
 
-        btnRecord!!.setOnTouchListener(OnTouchListener { v: View?, event: MotionEvent? ->
-            if (event!!.getAction() == MotionEvent.ACTION_DOWN) {
-                // Pressed
-                handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background_pressed) })
-                if (checkRecordPermission()) {
-                    if (!mWhisper!!.isInProgress) {
-                        vibrate(this)
-                        startRecording()
-                        handler.post(Runnable { processingBar!!.setProgress(100) })
-                        countDownTimer = object : CountDownTimer(30000, 1000) {
-                            override fun onTick(l: Long) {
-                                handler.post(Runnable { processingBar!!.setProgress((l / 300).toInt()) })
-                            }
-
-                            override fun onFinish() {}
+        btnRecord!!.setOnTouchListener { v: View?, event: MotionEvent? ->
+            if (event!!.action == MotionEvent.ACTION_DOWN) {
+                handler.post { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background_pressed) }
+                if (mWhisper != null && mWhisper!!.isInProgress) {
+                    handler.post {
+                        processingBar!!.isIndeterminate = true
+                        tvStatus!!.text = getString(R.string.please_wait)
+                        tvStatus!!.visibility = View.VISIBLE
+                        btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background)
+                    }
+                } else {
+                    vibrate(this)
+                    startRecording()
+                    handler.post { processingBar!!.progress = 100 }
+                    countDownTimer = object : CountDownTimer(30000, 1000) {
+                        override fun onTick(l: Long) {
+                            handler.post { processingBar!!.progress = (l / 300).toInt() }
                         }
-                        countDownTimer!!.start()
-                        handler.post(Runnable {
-                            tvStatus!!.setText("")
-                            tvStatus!!.setVisibility(View.GONE)
-                        })
-                    } else {
-                        handler.post(Runnable {
-                            tvStatus!!.setText(getString(R.string.please_wait))
-                            tvStatus!!.setVisibility(View.VISIBLE)
-                        })
+                        override fun onFinish() {}
+                    }
+                    countDownTimer!!.start()
+                    handler.post {
+                        tvStatus!!.text = ""
+                        tvStatus!!.visibility = View.GONE
                     }
                 }
-            } else if (event.getAction() == MotionEvent.ACTION_UP) {
-                // Released
-                handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) })
+            } else if (event.action == MotionEvent.ACTION_UP) {
+                handler.post { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) }
                 if (mRecorder != null && mRecorder!!.isInProgress) {
                     mRecorder!!.stop()
                     unmuteMediaAudio()
                 }
             }
             true
-        })
+        }
 
-        btnKeyboard!!.setOnClickListener(View.OnClickListener { v: View? ->
+        btnKeyboard!!.setOnClickListener {
             if (mWhisper != null) stopTranscription()
             switchToPreviousInputMethod()
-        })
+        }
 
-        btnTranslate!!.setOnClickListener(View.OnClickListener { v: View? ->
+        btnTranslate!!.setOnClickListener {
             translate = !translate
             btnTranslate!!.setImageResource(if (translate) R.drawable.ic_english_on_36dp else R.drawable.ic_english_off_36dp)
-        })
+        }
 
-        btnEnter!!.setOnClickListener(View.OnClickListener { v: View? ->
-            getCurrentInputConnection().sendKeyEvent(
-                KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER)
-            )
-        })
+        btnEnter!!.setOnClickListener {
+            currentInputConnection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
+        }
 
-        btnModeAuto!!.setOnClickListener(View.OnClickListener { v: View? ->
+        btnModeAuto!!.setOnClickListener {
             modeAuto = !modeAuto
-            val editor = sp!!.edit()
-            editor.putBoolean("imeModeAuto", modeAuto)
-            editor.apply()
-            layoutButtons!!.setVisibility(if (modeAuto) View.GONE else View.VISIBLE)
+            sp.edit().putBoolean("imeModeAuto", modeAuto).apply()
+            layoutButtons!!.visibility = if (modeAuto) View.GONE else View.VISIBLE
             btnModeAuto!!.setImageResource(if (modeAuto) R.drawable.ic_auto_on_36dp else R.drawable.ic_auto_off_36dp)
             switchToPreviousInputMethod()
-        })
+        }
         return view
     }
 
     private fun muteMediaAudio() {
-        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        val audioManager = getSystemService(AudioManager::class.java)
         mSavedMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
         if (mSavedMediaVolume > 0) {
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
@@ -301,91 +246,77 @@ class WhisperInputMethodService : InputMethodService() {
 
     private fun unmuteMediaAudio() {
         if (mSavedMediaVolume >= 0) {
-            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val audioManager = getSystemService(AudioManager::class.java)
             audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mSavedMediaVolume, 0)
             mSavedMediaVolume = -1
         }
     }
 
     private fun startRecording() {
-        if (sp!!.getBoolean("muteDuringRecording", false)) {
-            muteMediaAudio()
-        }
+        val sp = PreferenceManager.getDefaultSharedPreferences(this)
+        if (sp.getBoolean("muteDuringRecording", false)) muteMediaAudio()
         if (modeAuto) mRecorder!!.initVad()
         mRecorder!!.start()
     }
 
-    // Model initialization
     private fun initModel(modelFile: File) {
-        val isMultilingualModel: Boolean =
-            !(modelFile.getName().endsWith(MainActivity.Companion.ENGLISH_ONLY_MODEL_EXTENSION))
-        val vocabFileName: String =
-            if (isMultilingualModel) MainActivity.Companion.MULTILINGUAL_VOCAB_FILE else MainActivity.Companion.ENGLISH_ONLY_VOCAB_FILE
+        val isMultilingual = !modelFile.name.endsWith(ModelConstants.ENGLISH_ONLY_MODEL_EXTENSION)
+        val vocabFileName = if (isMultilingual) ModelConstants.MULTILINGUAL_VOCAB_FILE else ModelConstants.ENGLISH_ONLY_VOCAB_FILE
         val vocabFile = File(sdcardDataFolder, vocabFileName)
 
         mWhisper = Whisper(this)
-        mWhisper!!.loadModel(modelFile, vocabFile, isMultilingualModel)
-        Log.d(TAG, "Initialized: " + modelFile.getName())
-        mWhisper!!.setListener(object : WhisperListener {
-            override fun onUpdateReceived(message: String?) {
-            }
+        mWhisper!!.loadModel(modelFile, vocabFile, isMultilingual)
+        Log.d(TAG, "Initialized: " + modelFile.name)
+        mWhisper!!.setListener(object : Whisper.WhisperListener {
+            override fun onUpdateReceived(message: String?) {}
 
             override fun onResultReceived(whisperResult: WhisperResult?) {
-                handler.post(Runnable { processingBar!!.setIndeterminate(false) })
-                handler.post(Runnable {
-                    tvStatus!!.setText("")
-                    tvStatus!!.setVisibility(View.GONE)
-                })
-
+                handler.post {
+                    processingBar!!.isIndeterminate = false
+                    processingBar!!.progress = 0
+                }
+                handler.post {
+                    tvStatus!!.text = ""
+                    tvStatus!!.visibility = View.GONE
+                }
                 var result = whisperResult!!.result
-                if (whisperResult!!.language == "zh") {
-                    val simpleChinese = sp!!.getBoolean("simpleChinese", false)
-                    result =
-                        if (simpleChinese) ZhConverterUtil.toSimple(result) else ZhConverterUtil.toTraditional(
-                            result
-                        )
+                if (whisperResult.language == "zh") {
+                    val sp = PreferenceManager.getDefaultSharedPreferences(this@WhisperInputMethodService)
+                    val simpleChinese = sp.getBoolean("simpleChinese", false)
+                    result = if (simpleChinese) com.github.houbb.opencc4j.util.ZhConverterUtil.toSimple(result)
+                    else com.github.houbb.opencc4j.util.ZhConverterUtil.toTraditional(result)
                 }
                 var commitSuccess = false
-                if (result!!.trim { it <= ' ' }.length > 0) commitSuccess =
-                    getCurrentInputConnection().commitText(result.trim { it <= ' ' } + " ", 1)
-                if (modeAuto && commitSuccess) handler.postDelayed(
-                    Runnable { switchToPreviousInputMethod() },
-                    100
-                ) //slightly delayed, otherwise some apps, e.g. WhatsApp, do not accept the committed text (commitText on inactive InputConnection)
+                if (!result.isNullOrBlank()) {
+                    commitSuccess = getCurrentInputConnection()?.commitText(result.trim() + " ", 1) ?: false
+                }
+                if (modeAuto && commitSuccess) {
+                    handler.postDelayed({ switchToPreviousInputMethod() }, 100)
+                }
             }
         })
     }
 
     private fun startTranscription() {
-        if (countDownTimer != null) {
-            countDownTimer!!.cancel()
+        if (countDownTimer != null) countDownTimer!!.cancel()
+        handler.post {
+            processingBar!!.progress = 0
+            processingBar!!.isIndeterminate = true
         }
-        handler.post(Runnable { processingBar!!.setProgress(0) })
-        handler.post(Runnable { processingBar!!.setIndeterminate(true) })
         if (mWhisper != null) {
             if (translate) mWhisper!!.setAction(Whisper.ACTION_TRANSLATE)
             else mWhisper!!.setAction(Whisper.ACTION_TRANSCRIBE)
-
-            val langCode: String = sp!!.getString("language", "auto")!!
+            val sp = PreferenceManager.getDefaultSharedPreferences(this)
+            val langCode = sp.getString("language", "auto") ?: "auto"
             val langToken = InputLang.getIdForLanguage(langList, langCode)
-            Log.d("WhisperIME", "default langToken " + langToken)
             mWhisper!!.setLanguage(langToken)
             mWhisper!!.start()
         }
     }
 
     private fun stopTranscription() {
-        handler.post(Runnable { processingBar!!.setIndeterminate(false) })
+        handler.post { processingBar!!.isIndeterminate = false }
         mWhisper!!.stop()
-    }
-
-    private fun checkRecordPermission(): Boolean {
-        val permission = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-        if (permission != PackageManager.PERMISSION_GRANTED) {
-            tvStatus!!.setVisibility(View.VISIBLE)
-            tvStatus!!.setText(getString(R.string.need_record_audio_permission))
-        }
-        return (permission == PackageManager.PERMISSION_GRANTED)
     }
 
     private fun deinitModel() {
@@ -397,6 +328,5 @@ class WhisperInputMethodService : InputMethodService() {
 
     companion object {
         private const val TAG = "WhisperInputMethodService"
-        private var translate = false
     }
 }

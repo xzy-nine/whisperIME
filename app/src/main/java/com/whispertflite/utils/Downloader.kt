@@ -3,11 +3,9 @@ package com.whispertflite.utils
 import android.app.Activity
 import android.content.Context
 import android.util.Log
-import android.view.View
 import android.widget.Toast
 import androidx.preference.PreferenceManager
 import com.whispertflite.R
-import com.whispertflite.databinding.ActivityDownloadBinding
 import java.io.BufferedInputStream
 import java.io.File
 import java.io.FileInputStream
@@ -216,11 +214,15 @@ object Downloader {
         sp.edit().remove("recognitionServiceModelName").apply()
     }
 
-    fun downloadModels(activity: Activity, binding: ActivityDownloadBinding) {
+    fun downloadModels(
+        activity: Activity,
+        onProgress: (currentBytes: Long, percent: Int) -> Unit,
+        onModelReady: () -> Unit,
+        onError: () -> Unit
+    ) {
         checkModels(activity)
 
-        binding.downloadProgress.setProgress(0)
-        binding.downloadButton.setEnabled(false)
+        onProgress(0, 0)
 
         val modelMultiLingualBaseFile =
             File(activity.getExternalFilesDir(null).toString() + "/" + modelMultiLingualBase)
@@ -229,23 +231,22 @@ object Downloader {
             Log.d(TAG, "multi-lingual base model file does not exist")
             downloadSingleModel(
                 activity = activity,
-                binding = binding,
                 modelFile = modelMultiLingualBaseFile,
                 fileName = modelMultiLingualBase,
                 expectedMD5 = modelMultiLingualBaseMD5,
                 onProgress = { size ->
                     downloadModelMultiLingualBaseSize = size
-                    activity.runOnUiThread { updateProgressUI(binding) }
+                    activity.runOnUiThread { updateProgress(onProgress) }
                 },
                 onSuccess = {
                     modelMultiLingualBaseFinished = true
-                    activity.runOnUiThread { showStartIfAllReady(binding) }
+                    activity.runOnUiThread { checkAllReady(onModelReady) }
                 }
             )
         } else {
             downloadModelMultiLingualBaseSize = modelMultiLingualBaseSize
             modelMultiLingualBaseFinished = true
-            activity.runOnUiThread { showStartIfAllReady(binding) }
+            activity.runOnUiThread { checkAllReady(onModelReady) }
         }
 
         val modelMultiLingualSmallFile =
@@ -255,23 +256,22 @@ object Downloader {
             Log.d(TAG, "multi-lingual small model file does not exist")
             downloadSingleModel(
                 activity = activity,
-                binding = binding,
                 modelFile = modelMultiLingualSmallFile,
                 fileName = modelMultiLingualSmall,
                 expectedMD5 = modelMultiLingualSmallMD5,
                 onProgress = { size ->
                     downloadModelMultiLingualSmallSize = size
-                    activity.runOnUiThread { updateProgressUI(binding) }
+                    activity.runOnUiThread { updateProgress(onProgress) }
                 },
                 onSuccess = {
                     modelMultiLingualSmallFinished = true
-                    activity.runOnUiThread { showStartIfAllReady(binding) }
+                    activity.runOnUiThread { checkAllReady(onModelReady) }
                 }
             )
         } else {
             downloadModelMultiLingualSmallSize = modelMultiLingualSmallSize
             modelMultiLingualSmallFinished = true
-            activity.runOnUiThread { showStartIfAllReady(binding) }
+            activity.runOnUiThread { checkAllReady(onModelReady) }
         }
 
         val modelEnglishOnlyFile =
@@ -281,29 +281,27 @@ object Downloader {
             Log.d(TAG, "English only model file does not exist")
             downloadSingleModel(
                 activity = activity,
-                binding = binding,
                 modelFile = modelEnglishOnlyFile,
                 fileName = modelEnglishOnly,
                 expectedMD5 = modelEnglishOnlyMD5,
                 onProgress = { size ->
                     downloadModelEnglishOnlySize = size
-                    activity.runOnUiThread { updateProgressUI(binding) }
+                    activity.runOnUiThread { updateProgress(onProgress) }
                 },
                 onSuccess = {
                     modelEnglishOnlyFinished = true
-                    activity.runOnUiThread { showStartIfAllReady(binding) }
+                    activity.runOnUiThread { checkAllReady(onModelReady) }
                 }
             )
         } else {
             downloadModelEnglishOnlySize = modelEnglishOnlySize
             modelEnglishOnlyFinished = true
-            activity.runOnUiThread { showStartIfAllReady(binding) }
+            activity.runOnUiThread { checkAllReady(onModelReady) }
         }
     }
 
     private fun downloadSingleModel(
         activity: Activity,
-        binding: ActivityDownloadBinding,
         modelFile: File,
         fileName: String,
         expectedMD5: String,
@@ -366,20 +364,20 @@ object Downloader {
 
             activity.runOnUiThread {
                 Toast.makeText(activity, errorMsg, Toast.LENGTH_SHORT).show()
-                binding.downloadButton.setEnabled(true)
             }
         }).start()
     }
 
-    private fun updateProgressUI(binding: ActivityDownloadBinding) {
+    private fun updateProgress(onProgress: (currentBytes: Long, percent: Int) -> Unit) {
         val total = downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize
-        binding.downloadSize.setText("${total / 1024 / 1024} MB")
-        binding.downloadProgress.setProgress(((total.toDouble() / (modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize)) * 100).toInt())
+        val totalSize = modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize
+        val percent = if (totalSize > 0) ((total.toDouble() / totalSize) * 100).toInt() else 0
+        onProgress(total, percent)
     }
 
-    private fun showStartIfAllReady(binding: ActivityDownloadBinding) {
+    private fun checkAllReady(onModelReady: () -> Unit) {
         if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) {
-            binding.buttonStart.setVisibility(View.VISIBLE)
+            onModelReady()
         }
     }
 
