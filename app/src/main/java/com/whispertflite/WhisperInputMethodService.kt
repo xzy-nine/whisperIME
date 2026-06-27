@@ -33,6 +33,7 @@ import com.whispertflite.asr.Whisper
 import com.whispertflite.asr.WhisperResult
 import com.whispertflite.utils.HapticFeedback
 import com.whispertflite.utils.HapticFeedback.vibrate
+import com.whispertflite.data.InputFeedbacks
 import com.whispertflite.utils.InputLang
 import com.whispertflite.utils.InputLang.Companion.langList
 import com.whispertflite.utils.ModelConstants
@@ -107,6 +108,7 @@ class WhisperInputMethodService : InputMethodService() {
     }
 
     override fun onCreateInputView(): View {
+        com.whispertflite.data.InputFeedbacks.init(this)
         setupGlassWindow()
         val density = resources.displayMetrics.density
         val sp = PreferenceManager.getDefaultSharedPreferences(this)
@@ -387,7 +389,10 @@ class WhisperInputMethodService : InputMethodService() {
             )
             background = ripple
             contentDescription = contentDesc
-            setOnClickListener { onClick() }
+            setOnClickListener {
+                InputFeedbacks.hapticFeedback(this, longPress = false)
+                onClick()
+            }
         }
     }
 
@@ -409,14 +414,17 @@ class WhisperInputMethodService : InputMethodService() {
 
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
                 if (event.action == MotionEvent.ACTION_DOWN) {
+                    InputFeedbacks.hapticFeedback(btn, longPress = false)
                     currentInputConnection.sendKeyEvent(
                         KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
                     )
                     initialDeleteRunnable = Runnable {
+                        InputFeedbacks.hapticFeedback(btn, longPress = false)
                         currentInputConnection.sendKeyEvent(
                             KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
                         )
                         repeatDeleteRunnable = Runnable {
+                            InputFeedbacks.hapticFeedback(btn, longPress = false)
                             currentInputConnection.sendKeyEvent(
                                 KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL)
                             )
@@ -440,6 +448,7 @@ class WhisperInputMethodService : InputMethodService() {
         btn.setOnTouchListener(object : View.OnTouchListener {
             override fun onTouch(v: View?, event: MotionEvent): Boolean {
                 if (event.action == MotionEvent.ACTION_DOWN) {
+                    InputFeedbacks.hapticFeedback(btn, longPress = true)
                     handler.post { updateMicState(true) }
                     if (mWhisper != null && mWhisper!!.isInProgress) {
                         handler.post {
@@ -638,6 +647,7 @@ class WhisperInputMethodService : InputMethodService() {
                     val ic = currentInputConnection
                     if (ic != null && selectionMode) {
                         ic.performContextMenuAction(android.R.id.selectAll)
+                        InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
                         yActioned = true
                     }
                 }
@@ -703,6 +713,7 @@ class WhisperInputMethodService : InputMethodService() {
                     }
                 }
             }
+            InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
         }
 
         override fun dispatchTouchEvent(event: MotionEvent): Boolean {
@@ -778,21 +789,25 @@ class WhisperInputMethodService : InputMethodService() {
                                 currentInputConnection?.performContextMenuAction(android.R.id.undo)
                                 pastePerformed = false
                                 yActioned = true
+                                InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
                             } else if (yDownCount > 0 && !selectionMode) {
                                 currentInputConnection?.performContextMenuAction(android.R.id.paste)
                                 pastePerformed = true
                                 yActioned = true
+                                InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
                             } else if (selectionMode && yUpCount >= 1) {
                                 val (selStart, selEnd) = getSelectionRange() ?: Pair(0, 0)
                                 if (selStart != selEnd) {
                                     currentInputConnection?.performContextMenuAction(android.R.id.cut)
                                     yActioned = true
+                                    InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
                                 }
                             } else if (!selectionMode && yUpCount > 0) {
                                 val (selStart, selEnd) = getSelectionRange() ?: Pair(0, 0)
                                 if (selStart != selEnd) {
                                     currentInputConnection?.performContextMenuAction(android.R.id.copy)
                                     yActioned = true
+                                    InputFeedbacks.hapticFeedback(this@TouchKeyboardLayout, longPress = false)
                                 }
                             }
                         }
