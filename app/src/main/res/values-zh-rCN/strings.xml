@@ -11,7 +11,7 @@
     <string name="mirror_sjtu">上海交大镜像</string>
     <string name="select_model">模型:</string>
     <string name="status">状态:</string>
-    <string name="append">附加:</string>
+    <string name="append">追加文本:</string>
     <string name="translate">翻译至英文:</string>
     <string name="copy_to_clipboard">复制</string>
     <string name="info">信息</string>
@@ -41,4 +41,5 @@
     <string name="auto_button">自动模式</string>
     <string name="error_no_input">未接受到语音输入</string>
     <string name="auto_lang">检测语言</string>
+    <string name="mute_during_recording">录音时静音:</string>
 </resources>

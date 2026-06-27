@@ -7,6 +7,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.inputmethodservice.InputMethodService
+import android.media.AudioManager
 import android.os.CountDownTimer
 import android.os.Handler
 import android.os.Looper
@@ -53,6 +54,7 @@ class WhisperInputMethodService : InputMethodService() {
     private var countDownTimer: CountDownTimer? = null
     private var modeAuto = false
     private var layoutButtons: LinearLayout? = null
+    private var mSavedMediaVolume = -1
 
     override fun onCreate() {
         mContext = this
@@ -61,6 +63,7 @@ class WhisperInputMethodService : InputMethodService() {
 
     override fun onDestroy() {
         deinitModel()
+        unmuteMediaAudio()
         if (mRecorder != null && mRecorder!!.isInProgress) {
             mRecorder!!.stop()
         }
@@ -73,6 +76,7 @@ class WhisperInputMethodService : InputMethodService() {
                 TAG,
                 "Cancelling: onStartInput: inputType=" + attribute.inputType + ", package=" + attribute.packageName + ", fieldId=" + attribute.fieldId
             )
+            unmuteMediaAudio()
             deinitModel()
             if (mRecorder != null && mRecorder!!.isInProgress) {
                 mRecorder!!.stop()
@@ -129,10 +133,12 @@ class WhisperInputMethodService : InputMethodService() {
                 if (message == Recorder.MSG_RECORDING) {
                     handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background_pressed) })
                 } else if (message == Recorder.MSG_RECORDING_DONE) {
+                    unmuteMediaAudio()
                     HapticFeedback.vibrate(mContext!!)
                     handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) })
                     startTranscription()
                 } else if (message == Recorder.MSG_RECORDING_ERROR) {
+                    unmuteMediaAudio()
                     HapticFeedback.vibrate(mContext!!)
                     if (countDownTimer != null) {
                         countDownTimer!!.cancel()
@@ -251,6 +257,7 @@ class WhisperInputMethodService : InputMethodService() {
                 handler.post(Runnable { btnRecord!!.setBackgroundResource(R.drawable.rounded_button_background) })
                 if (mRecorder != null && mRecorder!!.isInProgress) {
                     mRecorder!!.stop()
+                    unmuteMediaAudio()
                 }
             }
             true
@@ -284,7 +291,26 @@ class WhisperInputMethodService : InputMethodService() {
         return view
     }
 
+    private fun muteMediaAudio() {
+        val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+        mSavedMediaVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
+        if (mSavedMediaVolume > 0) {
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, 0, 0)
+        }
+    }
+
+    private fun unmuteMediaAudio() {
+        if (mSavedMediaVolume >= 0) {
+            val audioManager = getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, mSavedMediaVolume, 0)
+            mSavedMediaVolume = -1
+        }
+    }
+
     private fun startRecording() {
+        if (sp!!.getBoolean("muteDuringRecording", false)) {
+            muteMediaAudio()
+        }
         if (modeAuto) mRecorder!!.initVad()
         mRecorder!!.start()
     }

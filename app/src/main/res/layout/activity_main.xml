@@ -165,6 +165,30 @@
                 android:contentDescription="@string/simple_chinese"/>
 
         </LinearLayout>
+
+        <LinearLayout
+            android:id="@+id/layout_mute"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="start">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:textSize="16sp"
+                android:textColor="@color/colorAccent"
+                android:text="@string/mute_during_recording" />
+
+            <CheckBox
+                android:id="@+id/mode_mute"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minWidth="0dp"
+                android:minHeight="0dp"
+                android:contentDescription="@string/mute_during_recording"/>
+
+        </LinearLayout>
         <!-- Use ProgressBar as "Space" with same look -->
         <ProgressBar
             android:layout_width="match_parent"

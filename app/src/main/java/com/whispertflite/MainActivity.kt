@@ -67,6 +67,7 @@ class MainActivity : AppCompatActivity() {
     private var append: CheckBox? = null
     private var translate: CheckBox? = null
     private var modeSimpleChinese: CheckBox? = null
+    private var modeMute: CheckBox? = null
     private var modeTTS: CheckBox? = null
     private var processingBar: ProgressBar? = null
     private var btnInfo: ImageButton? = null
@@ -280,6 +281,14 @@ class MainActivity : AppCompatActivity() {
             editor.putBoolean("simpleChinese", isChecked)
             editor.apply()
             tvResult!!.setText("")
+        })
+
+        modeMute = findViewById<CheckBox>(R.id.mode_mute)
+        modeMute!!.setChecked(sp!!.getBoolean("muteDuringRecording", false))
+        modeMute!!.setOnCheckedChangeListener(CompoundButton.OnCheckedChangeListener { compoundButton: CompoundButton?, isChecked: Boolean ->
+            val editor = sp!!.edit()
+            editor.putBoolean("muteDuringRecording", isChecked)
+            editor.apply()
         })
 
         tvStatus = findViewById<TextView>(R.id.tvStatus)
