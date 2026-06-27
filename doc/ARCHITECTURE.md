@@ -63,30 +63,30 @@ app/src/main/
 │
 ├── java/com/whispertflite/
 │   ├── DownloadActivity.kt               # 模型下载/更新页
-│   ├── MainActivity.java                 # 主界面（录音+转写/翻译）
-│   ├── GithubStar.java                   # GitHub 加星提示
-│   ├── WhisperInputMethodService.java    # IME 输入法服务
-│   ├── WhisperRecognizeActivity.java     # 语音识别弹窗 Activity
-│   ├── WhisperRecognitionService.java    # Android RecognitionService
-│   ├── WhisperRecognitionServiceSettingsActivity.java  # 识别服务设置
+│   ├── MainActivity.kt                 # 主界面（录音+转写/翻译）
+│   ├── GithubStar.kt                   # GitHub 加星提示
+│   ├── WhisperInputMethodService.kt    # IME 输入法服务
+│   ├── WhisperRecognizeActivity.kt     # 语音识别弹窗 Activity
+│   ├── WhisperRecognitionService.kt    # Android RecognitionService
+│   ├── WhisperRecognitionServiceSettingsActivity.kt  # 识别服务设置
 │   │
 │   ├── asr/                              # 语音识别核心层
-│   │   ├── Recorder.java                 # 音频录制器
-│   │   ├── RecordBuffer.java             # PCM 缓冲区
-│   │   ├── Whisper.java                  # 识别协调类
-│   │   └── WhisperResult.java            # 识别结果数据类
+│   │   ├── Recorder.kt                 # 音频录制器
+│   │   ├── RecordBuffer.kt             # PCM 缓冲区
+│   │   ├── Whisper.kt                  # 识别协调类
+│   │   └── WhisperResult.kt            # 识别结果数据类
 │   │
 │   ├── engine/                           # 推理引擎层
-│   │   ├── WhisperEngine.java            # 引擎接口
-│   │   └── WhisperEngineJava.java        # TFLite 引擎实现
+│   │   ├── WhisperEngine.kt            # 引擎接口
+│   │   └── WhisperEngineJava.kt        # TFLite 引擎实现
 │   │
 │   └── utils/                            # 工具层
-│       ├── Downloader.java               # 模型下载/MD5校验
-│       ├── HapticFeedback.java           # 触觉反馈
-│       ├── InputLang.java                # 语言代码↔TokenID 映射
-│       ├── LanguagePairAdapter.java      # Spinner 语言列表适配器
-│       ├── ThemeUtils.java               # 状态栏主题工具
-│       └── WhisperUtil.java              # 频谱分析/FFT/词汇加载
+│       ├── Downloader.kt               # 模型下载/MD5校验
+│       ├── HapticFeedback.kt           # 触觉反馈
+│       ├── InputLang.kt                # 语言代码↔TokenID 映射
+│       ├── LanguagePairAdapter.kt      # Spinner 语言列表适配器
+│       ├── ThemeUtils.kt               # 状态栏主题工具
+│       └── WhisperUtil.kt              # 频谱分析/FFT/词汇加载
 │
 └── res/
     ├── drawable/                         # 矢量图标 (20个)
