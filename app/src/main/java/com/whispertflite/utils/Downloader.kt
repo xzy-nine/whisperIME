@@ -20,6 +20,18 @@ import java.security.MessageDigest
 import java.security.NoSuchAlgorithmException
 
 object Downloader {
+    enum class MirrorSource(val labelResId: Int, val baseUrl: String) {
+        HUGGINGFACE(R.string.mirror_huggingface, "https://huggingface.co"),
+        HF_MIRROR(R.string.mirror_hf_mirror, "https://hf-mirror.com"),
+        SJTU_MIRROR(R.string.mirror_sjtu, "https://mirror.sjtu.edu.cn/huggingface");
+
+        fun getDisplayName(context: Context): String = context.getString(labelResId)
+    }
+
+    private const val MODEL_REPO_PATH = "/DocWolle/whisper_tflite_models/resolve/main/"
+    private const val PREF_MIRROR_SOURCE = "pref_mirror_source"
+    private const val TAG = "WhisperASR"
+
     const val modelMultiLingualBaseOLD: String =
         "whisper-base.tflite" //Todo Remove ...OLD... stuff later
     const val modelMultiLingualBaseOLD2: String =
@@ -28,12 +40,6 @@ object Downloader {
     const val modelMultiLingualSmallOLD: String = "whisper-small.tflite"
     const val modelMultiLingualSmall: String = "whisper-small.TOP_WORLD.tflite"
     const val modelEnglishOnly: String = "whisper-tiny.en.tflite"
-    const val modelMultiLingualBaseURL: String =
-        "https://huggingface.co/DocWolle/whisper_tflite_models/resolve/main/whisper-base.TOP_WORLD.tflite"
-    const val modelMultiLingualSmallURL: String =
-        "https://huggingface.co/DocWolle/whisper_tflite_models/resolve/main/whisper-small.TOP_WORLD.tflite"
-    const val modelEnglishOnlyURL: String =
-        "https://huggingface.co/DocWolle/whisper_tflite_models/resolve/main/whisper-tiny.en.tflite"
     const val modelMultiLingualBaseOLDMD5: String = "4b4fddfac6a24ffecc4972bc2137ba04"
     const val modelMultiLingualBaseOLD2MD5: String = "82adc0d42761f6d83fecd76d0325bcf5"
     const val modelMultiLingualBaseMD5: String = "9e43f385a916ac4b2e48760ce1fa70fc"
@@ -49,6 +55,32 @@ object Downloader {
     var modelMultiLingualBaseFinished: Boolean = false
     var modelEnglishOnlyFinished: Boolean = false
     var modelMultiLingualSmallFinished: Boolean = false
+
+    fun getMirrorSource(context: Context): MirrorSource {
+        val sp = PreferenceManager.getDefaultSharedPreferences(context)
+        val name = sp.getString(PREF_MIRROR_SOURCE, MirrorSource.HUGGINGFACE.name)
+            ?: MirrorSource.HUGGINGFACE.name
+        return try {
+            MirrorSource.valueOf(name)
+        } catch (e: IllegalArgumentException) {
+            MirrorSource.HUGGINGFACE
+        }
+    }
+
+    fun setMirrorSource(context: Context, source: MirrorSource) {
+        PreferenceManager.getDefaultSharedPreferences(context)
+            .edit()
+            .putString(PREF_MIRROR_SOURCE, source.name)
+            .apply()
+    }
+
+    private fun getMirrorTryOrder(preferred: MirrorSource): List<MirrorSource> {
+        val ordered = mutableListOf(preferred)
+        for (m in MirrorSource.values()) {
+            if (m != preferred) ordered.add(m)
+        }
+        return ordered
+    }
 
     fun checkUpdate(activity: Activity): Boolean {
         val modelMultiLingualBaseFile =
@@ -190,333 +222,164 @@ object Downloader {
         binding.downloadProgress.setProgress(0)
         binding.downloadButton.setEnabled(false)
 
-
         val modelMultiLingualBaseFile =
             File(activity.getExternalFilesDir(null).toString() + "/" + modelMultiLingualBase)
         if (!modelMultiLingualBaseFile.exists()) {
             modelMultiLingualBaseFinished = false
-            Log.d("WhisperASR", "multi-lingual base model file does not exist")
-            val thread = Thread(Runnable {
-                try {
-                    val url: URL?
-
-                    url = URL(modelMultiLingualBaseURL)
-
-                    Log.d("WhisperASR", "Download model")
-
-                    val ucon = url.openConnection()
-                    ucon.setReadTimeout(5000)
-                    ucon.setConnectTimeout(10000)
-
-                    val `is` = ucon.getInputStream()
-                    val inStream = BufferedInputStream(`is`, 1024 * 5)
-
-                    modelMultiLingualBaseFile.createNewFile()
-
-                    val outStream = FileOutputStream(modelMultiLingualBaseFile)
-                    val buff = ByteArray(5 * 1024)
-
-                    var len: Int
-                    while ((inStream.read(buff).also { len = it }) != -1) {
-                        outStream.write(buff, 0, len)
-                        if (modelMultiLingualBaseFile.exists()) downloadModelMultiLingualBaseSize =
-                            modelMultiLingualBaseFile.length()
-                        activity.runOnUiThread(Runnable {
-                            binding.downloadSize.setText(((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize) / 1024 / 1024).toString() + " MB")
-                            binding.downloadProgress.setProgress((((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize).toDouble() / (modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize)) * 100).toInt())
-                        })
-                    }
-                    outStream.flush()
-                    outStream.close()
-                    inStream.close()
-                    var calcModelMultiLingualBaseMD5 = ""
-                    if (modelMultiLingualBaseFile.exists()) {
-                        calcModelMultiLingualBaseMD5 =
-                            calculateMD5(Paths.get(modelMultiLingualBaseFile.getPath()).toString())
-                    } else {
-                        throw IOException() //throw exception if there is no modelMultiLingualSmallFile at this point
-                    }
-
-                    if (!(calcModelMultiLingualBaseMD5 == modelMultiLingualBaseMD5)) {
-                        modelMultiLingualBaseFile.delete()
-                        modelMultiLingualBaseFinished = false
-                        activity.runOnUiThread(Runnable {
-                            Toast.makeText(
-                                activity,
-                                activity.getResources().getString(R.string.error_download),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            binding.downloadButton.setEnabled(true)
-                        })
-                    } else {
-                        modelMultiLingualBaseFinished = true
-                        activity.runOnUiThread(Runnable {
-                            if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                                View.VISIBLE
-                            )
-                        })
-                    }
-                } catch (i: NoSuchAlgorithmException) {
-                    modelMultiLingualBaseFile.delete()
-                    modelMultiLingualBaseFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
-                } catch (i: IOException) {
-                    modelMultiLingualBaseFile.delete()
-                    modelMultiLingualBaseFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
+            Log.d(TAG, "multi-lingual base model file does not exist")
+            downloadSingleModel(
+                activity = activity,
+                binding = binding,
+                modelFile = modelMultiLingualBaseFile,
+                fileName = modelMultiLingualBase,
+                expectedMD5 = modelMultiLingualBaseMD5,
+                onProgress = { size ->
+                    downloadModelMultiLingualBaseSize = size
+                    activity.runOnUiThread { updateProgressUI(binding) }
+                },
+                onSuccess = {
+                    modelMultiLingualBaseFinished = true
+                    activity.runOnUiThread { showStartIfAllReady(binding) }
                 }
-            })
-            thread.start()
+            )
         } else {
             downloadModelMultiLingualBaseSize = modelMultiLingualBaseSize
             modelMultiLingualBaseFinished = true
-            activity.runOnUiThread(Runnable {
-                if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                    View.VISIBLE
-                )
-            })
+            activity.runOnUiThread { showStartIfAllReady(binding) }
         }
 
         val modelMultiLingualSmallFile =
             File(activity.getExternalFilesDir(null).toString() + "/" + modelMultiLingualSmall)
         if (!modelMultiLingualSmallFile.exists()) {
             modelMultiLingualSmallFinished = false
-            Log.d("WhisperASR", "multi-lingual small model file does not exist")
-            val thread = Thread(Runnable {
-                try {
-                    val url: URL?
-
-                    url = URL(modelMultiLingualSmallURL)
-
-                    Log.d("WhisperASR", "Download model")
-
-                    val ucon = url.openConnection()
-                    ucon.setReadTimeout(5000)
-                    ucon.setConnectTimeout(10000)
-
-                    val `is` = ucon.getInputStream()
-                    val inStream = BufferedInputStream(`is`, 1024 * 5)
-
-                    modelMultiLingualSmallFile.createNewFile()
-
-                    val outStream = FileOutputStream(modelMultiLingualSmallFile)
-                    val buff = ByteArray(5 * 1024)
-
-                    var len: Int
-                    while ((inStream.read(buff).also { len = it }) != -1) {
-                        outStream.write(buff, 0, len)
-                        if (modelMultiLingualSmallFile.exists()) downloadModelMultiLingualSmallSize =
-                            modelMultiLingualSmallFile.length()
-                        activity.runOnUiThread(Runnable {
-                            binding.downloadSize.setText(((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize) / 1024 / 1024).toString() + " MB")
-                            binding.downloadProgress.setProgress((((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize).toDouble() / (modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize)) * 100).toInt())
-                        })
-                    }
-                    outStream.flush()
-                    outStream.close()
-                    inStream.close()
-                    var calcModelMultiLingualSmallMD5 = ""
-                    if (modelMultiLingualSmallFile.exists()) {
-                        calcModelMultiLingualSmallMD5 =
-                            calculateMD5(Paths.get(modelMultiLingualSmallFile.getPath()).toString())
-                    } else {
-                        throw IOException() //throw exception if there is no modelMultiLingualSmallFile at this point
-                    }
-
-                    if (!(calcModelMultiLingualSmallMD5 == modelMultiLingualSmallMD5)) {
-                        modelMultiLingualSmallFile.delete()
-                        modelMultiLingualSmallFinished = false
-                        activity.runOnUiThread(Runnable {
-                            Toast.makeText(
-                                activity,
-                                activity.getResources().getString(R.string.error_download),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            binding.downloadButton.setEnabled(true)
-                        })
-                    } else {
-                        modelMultiLingualSmallFinished = true
-                        activity.runOnUiThread(Runnable {
-                            if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                                View.VISIBLE
-                            )
-                        })
-                    }
-                } catch (i: NoSuchAlgorithmException) {
-                    modelMultiLingualSmallFile.delete()
-                    modelMultiLingualSmallFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
-                } catch (i: IOException) {
-                    modelMultiLingualSmallFile.delete()
-                    modelMultiLingualSmallFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
+            Log.d(TAG, "multi-lingual small model file does not exist")
+            downloadSingleModel(
+                activity = activity,
+                binding = binding,
+                modelFile = modelMultiLingualSmallFile,
+                fileName = modelMultiLingualSmall,
+                expectedMD5 = modelMultiLingualSmallMD5,
+                onProgress = { size ->
+                    downloadModelMultiLingualSmallSize = size
+                    activity.runOnUiThread { updateProgressUI(binding) }
+                },
+                onSuccess = {
+                    modelMultiLingualSmallFinished = true
+                    activity.runOnUiThread { showStartIfAllReady(binding) }
                 }
-            })
-            thread.start()
+            )
         } else {
             downloadModelMultiLingualSmallSize = modelMultiLingualSmallSize
             modelMultiLingualSmallFinished = true
-            activity.runOnUiThread(Runnable {
-                if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                    View.VISIBLE
-                )
-            })
+            activity.runOnUiThread { showStartIfAllReady(binding) }
         }
 
         val modelEnglishOnlyFile =
             File(activity.getExternalFilesDir(null).toString() + "/" + modelEnglishOnly)
         if (!modelEnglishOnlyFile.exists()) {
             modelEnglishOnlyFinished = false
-            Log.d("WhisperASR", "English only model file does not exist")
-            val thread = Thread(Runnable {
-                try {
-                    val url = URL(modelEnglishOnlyURL)
-                    Log.d("WhisperASR", "Download English only model")
+            Log.d(TAG, "English only model file does not exist")
+            downloadSingleModel(
+                activity = activity,
+                binding = binding,
+                modelFile = modelEnglishOnlyFile,
+                fileName = modelEnglishOnly,
+                expectedMD5 = modelEnglishOnlyMD5,
+                onProgress = { size ->
+                    downloadModelEnglishOnlySize = size
+                    activity.runOnUiThread { updateProgressUI(binding) }
+                },
+                onSuccess = {
+                    modelEnglishOnlyFinished = true
+                    activity.runOnUiThread { showStartIfAllReady(binding) }
+                }
+            )
+        } else {
+            downloadModelEnglishOnlySize = modelEnglishOnlySize
+            modelEnglishOnlyFinished = true
+            activity.runOnUiThread { showStartIfAllReady(binding) }
+        }
+    }
 
+    private fun downloadSingleModel(
+        activity: Activity,
+        binding: ActivityDownloadBinding,
+        modelFile: File,
+        fileName: String,
+        expectedMD5: String,
+        onProgress: (Long) -> Unit,
+        onSuccess: () -> Unit
+    ) {
+        val preferredMirror = getMirrorSource(activity)
+        val mirrors = getMirrorTryOrder(preferredMirror)
+        val errorMsg = activity.getString(R.string.error_download)
+
+        Thread(Runnable {
+            for (mirror in mirrors) {
+                try {
+                    val urlString = "${mirror.baseUrl}$MODEL_REPO_PATH$fileName"
+                    Log.d(TAG, "Downloading $fileName from ${mirror.getDisplayName(activity)}: $urlString")
+
+                    val url = URL(urlString)
                     val ucon = url.openConnection()
                     ucon.setReadTimeout(5000)
                     ucon.setConnectTimeout(10000)
 
-                    val `is` = ucon.getInputStream()
-                    val inStream = BufferedInputStream(`is`, 1024 * 5)
+                    val inputStream = ucon.getInputStream()
+                    val inStream = BufferedInputStream(inputStream, 1024 * 5)
 
-                    modelEnglishOnlyFile.createNewFile()
-
-                    val outStream = FileOutputStream(modelEnglishOnlyFile)
+                    modelFile.createNewFile()
+                    val outStream = FileOutputStream(modelFile)
                     val buff = ByteArray(5 * 1024)
-
                     var len: Int
                     while ((inStream.read(buff).also { len = it }) != -1) {
                         outStream.write(buff, 0, len)
-                        if (modelEnglishOnlyFile.exists()) downloadModelEnglishOnlySize =
-                            modelEnglishOnlyFile.length()
-                        activity.runOnUiThread(Runnable {
-                            binding.downloadSize.setText(((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize) / 1024 / 1024).toString() + " MB")
-                            binding.downloadProgress.setProgress((((downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize).toDouble() / (modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize)) * 100).toInt())
-                        })
+                        if (modelFile.exists()) onProgress(modelFile.length())
                     }
                     outStream.flush()
                     outStream.close()
                     inStream.close()
 
-                    var calcEnglishOnlyModelMD5 = ""
-                    if (modelEnglishOnlyFile.exists()) {
-                        calcEnglishOnlyModelMD5 =
-                            calculateMD5(Paths.get(modelEnglishOnlyFile.getPath()).toString())
+                    var calcMD5 = ""
+                    if (modelFile.exists()) {
+                        calcMD5 = calculateMD5(modelFile.path)
                     } else {
-                        throw IOException() //throw exception if there is no modelMultiLingualSmallFile at this point
+                        throw IOException("File does not exist after download")
                     }
 
-                    if (calcEnglishOnlyModelMD5 != modelEnglishOnlyMD5) {
-                        modelEnglishOnlyFile.delete()
-                        modelEnglishOnlyFinished = false
-                        activity.runOnUiThread(Runnable {
-                            Toast.makeText(
-                                activity,
-                                activity.getResources().getString(R.string.error_download),
-                                Toast.LENGTH_SHORT
-                            ).show()
-                            binding.downloadButton.setEnabled(true)
-                        })
+                    if (calcMD5 == expectedMD5) {
+                        setMirrorSource(activity, mirror)
+                        onSuccess()
+                        return@Runnable
                     } else {
-                        modelEnglishOnlyFinished = true
-                        activity.runOnUiThread(Runnable {
-                            if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                                View.VISIBLE
-                            )
-                        })
+                        modelFile.delete()
+                        Log.w(TAG, "MD5 mismatch for $fileName from ${mirror.getDisplayName(activity)}")
                     }
-                } catch (i: NoSuchAlgorithmException) {
-                    modelEnglishOnlyFile.delete()
-                    modelEnglishOnlyFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
-                } catch (i: IOException) {
-                    modelEnglishOnlyFile.delete()
-                    modelEnglishOnlyFinished = false
-                    activity.runOnUiThread(Runnable {
-                        Toast.makeText(
-                            activity,
-                            activity.getResources().getString(R.string.error_download),
-                            Toast.LENGTH_SHORT
-                        ).show()
-                        binding.downloadButton.setEnabled(true)
-                    })
-                    Log.w(
-                        "WhisperASR",
-                        activity.getResources().getString(R.string.error_download),
-                        i
-                    )
+                } catch (e: NoSuchAlgorithmException) {
+                    modelFile.delete()
+                    Log.w(TAG, "Download failed for $fileName from ${mirror.getDisplayName(activity)}", e)
+                } catch (e: IOException) {
+                    modelFile.delete()
+                    Log.w(TAG, "Download failed for $fileName from ${mirror.getDisplayName(activity)}", e)
                 }
-            })
-            thread.start()
-        } else {
-            downloadModelEnglishOnlySize = modelEnglishOnlySize
-            modelEnglishOnlyFinished = true
-            activity.runOnUiThread(Runnable {
-                if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) binding.buttonStart.setVisibility(
-                    View.VISIBLE
-                )
-            })
+            }
+
+            activity.runOnUiThread {
+                Toast.makeText(activity, errorMsg, Toast.LENGTH_SHORT).show()
+                binding.downloadButton.setEnabled(true)
+            }
+        }).start()
+    }
+
+    private fun updateProgressUI(binding: ActivityDownloadBinding) {
+        val total = downloadModelEnglishOnlySize + downloadModelMultiLingualSmallSize + downloadModelMultiLingualBaseSize
+        binding.downloadSize.setText("${total / 1024 / 1024} MB")
+        binding.downloadProgress.setProgress(((total.toDouble() / (modelEnglishOnlySize + modelMultiLingualSmallSize + modelMultiLingualBaseSize)) * 100).toInt())
+    }
+
+    private fun showStartIfAllReady(binding: ActivityDownloadBinding) {
+        if (modelEnglishOnlyFinished && modelMultiLingualSmallFinished && modelMultiLingualBaseFinished) {
+            binding.buttonStart.setVisibility(View.VISIBLE)
         }
     }
 

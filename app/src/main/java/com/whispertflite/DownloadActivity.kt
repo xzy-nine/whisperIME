@@ -3,6 +3,8 @@ package com.whispertflite
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import com.whispertflite.databinding.ActivityDownloadBinding
@@ -17,6 +19,25 @@ class DownloadActivity  : AppCompatActivity() {
         setContentView(binding.root)
         AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
         ThemeUtils.setStatusBarAppearance(this)
+        setupMirrorSpinner()
+    }
+
+    private fun setupMirrorSpinner() {
+        val sources = Downloader.MirrorSource.values()
+        val labels = sources.map { it.getDisplayName(this) }
+        val adapter = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        binding.mirrorSpinner.adapter = adapter
+
+        val current = Downloader.getMirrorSource(this)
+        binding.mirrorSpinner.setSelection(current.ordinal)
+
+        binding.mirrorSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                Downloader.setMirrorSource(this@DownloadActivity, sources[position])
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
     }
 
     override fun onResume() {

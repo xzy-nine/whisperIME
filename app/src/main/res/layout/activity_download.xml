@@ -52,6 +52,29 @@
                     android:textSize="18dp"
                     android:text="@string/download_model_text" />
 
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="12dp"
+                    android:layout_marginEnd="12dp"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="@string/mirror_source"
+                        android:textSize="14dp" />
+
+                    <Spinner
+                        android:id="@+id/mirror_spinner"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginStart="8dp" />
+                </LinearLayout>
+
                 <ImageButton
                     android:id="@+id/download_button"
                     android:layout_width="wrap_content"

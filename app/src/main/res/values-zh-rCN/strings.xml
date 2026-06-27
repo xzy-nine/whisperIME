@@ -4,7 +4,11 @@
     <string name="need_record_audio_permission">未授予录制音频权限</string>
     <string name="error_download">下载错误</string>
     <string name="download_model">下载模型</string>
-    <string name="download_model_text">\n从 Hugging Face 下载 Whisper 模型(~435 MB)</string>
+    <string name="download_model_text">\n下载 Whisper 模型(~435 MB)</string>
+    <string name="mirror_source">镜像源:</string>
+    <string name="mirror_huggingface">Hugging Face (官方)</string>
+    <string name="mirror_hf_mirror">HF-Mirror (国内镜像)</string>
+    <string name="mirror_sjtu">上海交大镜像</string>
     <string name="select_model">模型:</string>
     <string name="status">状态:</string>
     <string name="append">附加:</string>
